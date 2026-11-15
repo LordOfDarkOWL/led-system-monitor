@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
 # LED Matrix System Monitor - Framework Laptop 16
 #
-# Linkes Modul (user view, Spalten 1-9):
-#   Spalte 1: CPU frei    | Spalte 2: GPU frei (NVIDIA) | Spalte 3: CPU TEMP
-#   Spalte 4: RAM frei    | Spalte 5: VRAM frei (NVIDIA)
-#   Spalte 6: GPU TEMP
-#   (Zeiger von unten: CPU 30-100C, GPU 30-85C)
-#   Spalten 7-9: AKKU-ZELLEN (3x34=102 LEDs)
-#     Start unten rechts (Spalte 9), pro Reihe rechts->links, Reihen unten->oben.
-#     <=90%: 1% = genau 1 Zelle. >90%: 12 Zellen fuer 10% (bei 100% alle 102).
-#   CPU/RAM-Balken von der Oberkante.
+# Left panel (user view, columns 1-9):
+#   Col 1: Free CPU    | Col 2: Free GPU (NVIDIA) | Col 3: CPU TEMP
+#   Col 4: Free RAM   | Col 5: Free VRAM (NVIDIA)
+#   Col 6: GPU TEMP
+#   (Indicators from bottom: CPU 30-100C, GPU 30-85C)
+#   Cols 7-9: BATTERY CELLS (3x34=102 LEDs)
+#     Start bottom-right (col 9), row right->left, rows bottom->top.
+#     <=90%: 1% = exactly 1 cell. >90%: 12 cells per 10% (100% = all 102).
+#   CPU/RAM bars from the top edge.
 #
-# Rechtes Modul:
-#   Spalten 1-5: Downstream (1 Spalte = 1000Mbit%, 100er, 10er, 1er Stelle, kbit%) von oben
-#   Spalte 6: Luecke
-#   Spalten 7-9: Upstream (%, Einer Mbit, kbit%) von unten
+# Right panel:
+#   Cols 1-5: Download (1 col = 1000Mbit%, 100s, 10s, 1s, kbit%) from top
+#   Col 6: Gap
+#   Cols 7-9: Upload (%, 1000s Mbit, kbit%) from bottom
 #
-# Panel-Kalibrierung: angezeigt[i] = gesendet[(i-1) mod 9]
-#   => gesendet[k] = gewuenscht[(k+1) mod 9]
+# Panel calibration: displayed[i] = sent[(i-1) mod 9]
+#   => sent[k] = desired[(k+1) mod 9]
 #
-# Refresh: 10 Hz (Netzwerk/Helligkeit/rechts), 1 Hz (System/links), Akku 5s
-# Auto-Helligkeit: IIO-Lichtsensor, EMA-geglättet, Dunkel=8, hell=255
+# Refresh: 10 Hz (network/brightness/right), 1 Hz (system/left), battery 5s
+# Auto-brightness: IIO light sensor, EMA-smoothed, dark=8, bright=255
 import struct, subprocess, time, os
 
 W, H = 9, 34
 BMP_PATH = '/tmp/ledsysmon.bmp'
-MIN_BRIGHT = 8       # Helligkeit (0-255) bei Dunkelheit, user-kalibriert
-FADE_STEP = H / 20.0  # 1.7 px/Frame @10Hz -> volle Balken faded in ~2s aus
+MIN_BRIGHT = 8       # Brightness (0-255) in darkness, user-calibrated
+FADE_STEP = H / 20.0  # 1.7 px/frame @10Hz -> full bars fade out in ~2s
 
 
 def read_cpu(prev):
@@ -40,7 +40,7 @@ def read_cpu(prev):
     dtotal = total - prev[1]
     if dtotal <= 0:
         return None, (idle, total)
-    return 100.0 * didle / dtotal, (idle, total)  # freie CPU %
+    return 100.0 * didle / dtotal, (idle, total)  # free CPU %
 
 
 def read_ram():
@@ -49,11 +49,11 @@ def read_ram():
         for line in f:
             k, v = line.split(':')[0], int(line.split()[1])
             info[k] = v
-    return 100.0 * info['MemAvailable'] / info['MemTotal']  # freie RAM %
+    return 100.0 * info['MemAvailable'] / info['MemTotal']  # free RAM %
 
 
 def read_gpu():
-    # (util %, used MiB, total MiB, temp C) via nvidia-smi
+    # (util %, used MiB, total MiB, temp °C) via nvidia-smi
     try:
         out = subprocess.run(['nvidia-smi',
                               '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu',
@@ -66,7 +66,7 @@ def read_gpu():
 
 
 def read_cpu_temp():
-    # CPU via acpitz thermal_zone3 (reagiert am schnellsten auf CPU-Last)
+    # CPU temp via acpitz thermal_zone3 (fastest responding to CPU load)
     try:
         return int(open('/sys/class/thermal/thermal_zone3/temp').read()) / 1000.0
     except Exception:
@@ -90,8 +90,8 @@ def read_charge_status():
 
 
 def battery_col_sets(cells):
-    # gibt 3 Mengen physischer Reihen zurueck (Spalten-Indizes 6,7,8)
-    # Fuellen: unten rechts zuerst, pro Reihe rechts->links, Reihen aufsteigend
+    # returns 3 sets of physical rows (col indices 6,7,8)
+    # Fill: bottom-right first, per row right->left, rows ascending
     cols = [set(), set(), set()]
     for c in range(cells):
         row_from_bottom = c // 3
@@ -103,7 +103,7 @@ def battery_col_sets(cells):
 
 
 def read_als():
-    # Umgebungslicht (lux) vom IIO-Sensor; -1 wenn nicht lesbar
+    # Ambient light (lux) from IIO sensor; -1 if unreadable
     try:
         d = '/sys/bus/iio/devices/iio:device0'
         raw = int(open(f'{d}/in_illuminance_raw').read())
@@ -114,17 +114,17 @@ def read_als():
 
 
 def ambient_brightness(lux, current_smoothed):
-    # Dunkel (<10lx) -> MIN_BRIGHT (8 = user-kalibriert), ab ca. 500lx -> 255
+    # Dark (<10lx) -> MIN_BRIGHT (8 = user-calibrated), ~500lx -> 255
     target = max(MIN_BRIGHT, min(255, int(round(8 + (lux - 10) * 0.5))))
     if lux < 0:
         return current_smoothed
-    # EMA-Smoothing gegen Flackern (vorbeiziehende Hand etc.)
-    # Alpha 0.1 bei 10 Hz -> Einschwingszeit ~2-3s
+    # EMA smoothing against flicker (passing hand etc.)
+    # Alpha 0.1 at 10 Hz -> settling time ~2-3s
     return int(round(0.9 * current_smoothed + 0.1 * target))
 
 
 def battery_cells(pct):
-    # <=90%: 1% = 1 Zelle; >90%: 12 Zellen fuer 10% -> bei 100% alle 102
+    # <=90%: 1% = 1 cell; >90%: 12 cells for 10% -> at 100% all 102
     pct = max(0.0, min(100.0, pct))
     if pct <= 90.0:
         return int(round(pct))
@@ -132,7 +132,7 @@ def battery_cells(pct):
 
 
 def top_fill(fill):
-    # phys rows 0..fill-1 (Oberkante)
+    # physical rows 0..fill-1 (top edge)
     return set(range(fill))
 
 
@@ -146,9 +146,9 @@ def empty():
 
 
 def build_bmp(col_rows):
-    # col_rows: 9 Mengen von physischen Reihen (phys_row 0 = Oberkante)
+    # col_rows: 9 sets of physical rows (phys_row 0 = top edge)
     data = bytearray()
-    for file_row in range(H):          # BMP bottom-up: file_row 0 = physisch unten
+    for file_row in range(H):          # BMP bottom-up: file_row 0 = physically bottom
         phys_row = H - 1 - file_row
         for col in range(W):
             v = b'\xFF\xFF\xFF' if phys_row in col_rows[col] else b'\x00\x00\x00'
@@ -184,17 +184,17 @@ TX_MAX_MBIT = 50.0     # 50 Mbit/s
 
 
 def pct(v):
-    # Fuellhoehe (0..H) fuer Anteil v (0.0..1.0)
+    # Fill height (0..H) for fraction v (0.0..1.0)
     return int(round(H * max(0.0, min(1.0, v))))
 
 
 def digit_fill(val):
-    # Ziffern-Encoding: voller Balken = 9.99
+    # Digit encoding: full bar = 9.99
     return int(round(H * max(0.0, min(1.0, val / 9.99))))
 
 
 def encode_speed(mbit, max_mbit):
-    # [prozent_max, hunderter+dez, zehner+dez, einer+dez, kbit_anteil]
+    # [pct_max, hundreds+dec, tens+dec, ones+dec, kbit_fraction]
     s = min(mbit, 999.99)
     i = int(s)
     h, t, u = i // 100, (i // 10) % 10, i % 10
@@ -209,7 +209,7 @@ def encode_speed(mbit, max_mbit):
 
 
 def shift(desired):
-    # gesendet[k] = gewuenscht[(k+1) mod 9]
+    # sent[k] = desired[(k+1) mod 9]
     return [desired[(k + 1) % 9] for k in range(9)]
 
 
@@ -227,9 +227,9 @@ def set_brightness(dev, val):
 
 
 def main():
-    # 10 Hz Hauptloop: Netzwerk + Helligkeit + beide Module
-    # 1 Hz: CPU/RAM/GPU/VRAM/Temp; Akku alle 5s
-    # Lade-Animation: Pfeil laeuft von oben durch die Akku-Zellen
+    # 10 Hz main loop: network + brightness + both modules
+    # 1 Hz: CPU/RAM/GPU/VRAM/temp; battery every 5s
+    # Charge animation: arrow runs from top through battery cells
     cpu_prev = None
     cpu_free = 100.0
     ram_free = read_ram()
@@ -241,21 +241,21 @@ def main():
     cpu_tmp_px = gpu_tmp_px = 0
     bat_cols_cached = battery_col_sets(battery_cells(batt))
     net_prev = None
-    disp_h = [0.0] * 9        # aktuelle (gefadete) Balkhoehen rechtes Modul
+    disp_h = [0.0] * 9        # current (faded) bar heights, right module
     bright = MIN_BRIGHT
     last_sent_bright = -1
     t_last_slow = 0.0
     t_last_batt = 0.0
-    arrow_y = None            # None = Animation inaktiv
-    one_shot = False          # letzter Durchlauf nach Ladeende
+    arrow_y = None            # None = animation inactive
+    one_shot = False          # final pass after charging ends
     charging_prev = False
-    snake_phase = 0           # 0 = auffuellen, 1 = ausfaden
+    snake_phase = 0           # 0 = fill, 1 = fade out
     snake_idx = -1
 
     while True:
         t0 = time.monotonic()
 
-        # --- Netzwerk-Rate (10 Hz, instant; Fade erfolgt auf Balkenkohe) ---
+        # --- Network rate (10 Hz, instant; fade on bar height) ---
         rx, tx = read_net()
         rx_inst = tx_inst = 0.0
         if net_prev is not None:
@@ -266,7 +266,7 @@ def main():
                 tx_inst = (tx - ptx) * 8 / dt / 1e6
         net_prev = (rx, tx, t0)
 
-        # --- Helligkeit (Sensor 10 Hz, EMA, nur bei Änderung >=2 senden) ---
+        # --- Brightness (sensor 10 Hz, EMA, send only on change >=2) ---
         lux = read_als()
         bright = ambient_brightness(lux, bright)
         if abs(bright - last_sent_bright) >= 2:
@@ -274,18 +274,18 @@ def main():
                 set_brightness(dev, bright)
             last_sent_bright = bright
 
-        # --- Rechtes Modul: Netzwerk mit Fast-Attack / 2s Fade-out ---
+        # --- Right module: network with fast-attack / 2s fade-out ---
         dn = encode_speed(rx_inst, RX_MAX_MBIT)
         up = encode_speed(tx_inst, TX_MAX_MBIT)
         if tx_inst < 10:
             up[1] = digit_fill(tx_inst)
         targets = [dn[0], dn[1], dn[2], dn[3], dn[4], 0,
                    up[0], up[1], up[4]]
-        # Attack: sofort hoch; Release: linear FADE_STEP px/Frame -> 2s Fade
+        # Attack: instant up; Release: linear FADE_STEP px/frame -> 2s fade
         for i in range(9):
             tgt = float(targets[i])
             if tgt >= disp_h[i]:
-                disp_h[i] = tgt          # Zyklus-Reset bei neuem Traffic
+                disp_h[i] = tgt          # cycle reset on new traffic
             else:
                 disp_h[i] = max(tgt, disp_h[i] - FADE_STEP)
         fills = [int(round(v)) for v in disp_h]
@@ -294,7 +294,7 @@ def main():
                          bottom_fill(fills[6]), bottom_fill(fills[7]), bottom_fill(fills[8])]
         send('/dev/ttyACM0', shift(right_desired))
 
-        # --- 1 Hz: Systemwerte aktualisieren ---
+        # --- 1 Hz: update system values ---
         if t0 - t_last_slow >= 1.0:
             t_last_slow = t0
             cf, cpu_prev = read_cpu(cpu_prev)
@@ -317,63 +317,63 @@ def main():
 
             cpu_f = int(round(cpu_free * H / 100))
             ram_f = int(round(ram_free * H / 100))
-            # Thermometer-Zeiger von unten (full = 34 bei Max-Temp)
+            # Thermometer indicator from bottom (full = 34 at max temp)
             cpu_tmp_px = int(round(H * max(0.0, min(1.0, (cpu_temp - 30.0) / (100.0 - 30.0)))))
             gpu_tmp_px = int(round(H * max(0.0, min(1.0, (gpu_temp - 30.0) / (85.0 - 30.0)))))
 
-        # --- Lade-Status, Pfeil- & Snake-Animation ---
+        # --- Charge status, arrow & snake animation ---
         status = read_charge_status()
         charging = status == 'Charging'
         idle_full = status in ('Full', 'Not charging')
         if charging:
-            one_shot = True               # nach Ladeende: ein letzter Durchlauf
+            one_shot = True               # after charging ends: one final pass
             if arrow_y is None:
-                arrow_y = 0               # oben starten
+                arrow_y = 0               # start from top
             else:
                 arrow_y += 1
                 if arrow_y > H + 2:
-                    arrow_y = 0           # loops, solange geladen wird
+                    arrow_y = 0           # loops while charging
         elif one_shot and arrow_y is not None:
             arrow_y += 1
             if arrow_y > H + 2:
                 one_shot = False
-                arrow_y = None            # fertig, aus
+                arrow_y = None            # done, off
         charging_prev = charging
 
-        # --- Linkes Modul (10 Hz, wegen Animationen) ---
+        # --- Left module (10 Hz, for animations) ---
         if idle_full:
-            # Snake-Sweep: alle 102 Zellen in Fuell-Reihenfolge
-            # (unten rechts -> oben links) erst an-, dann wieder ausfaden
+            # Snake-sweep: all 102 cells in fill order
+            # (bottom-right -> top-left) first fill, then fade out
             snake_idx += 1
             if snake_phase == 0:
                 if snake_idx > 101:
-                    snake_phase, snake_idx = 1, -1     # alles an -> ausfaden
+                    snake_phase, snake_idx = 1, -1     # all on -> fade out
             else:
                 if snake_idx > 101:
-                    snake_phase, snake_idx = 0, -1     # alles aus -> neu starten
+                    snake_phase, snake_idx = 0, -1     # all off -> restart
             bat_cols = [set(), set(), set()]
             for c in range(102):
                 lit = (c <= snake_idx) if snake_phase == 0 else (c > snake_idx)
                 if lit:
                     row_from_bottom = c // 3
                     pos = c % 3
-                    # Richtung wechselt je Reihe: gerade r->l, ungerade l->r
+                    # Direction alternates per row: even r->l, odd l->r
                     col_idx = (8 - pos) if (row_from_bottom % 2 == 0) else (6 + pos)
                     bat_cols[col_idx - 6].add(H - 1 - row_from_bottom)
         else:
             snake_phase, snake_idx = 0, -1
             bat_cols = [set(s) for s in bat_cols_cached]
         if arrow_y is not None:
-            # Pfeil nach unten: Spitze (arrow_y) + Schaft hoch, Querholz oben
+            # Downward arrow: tip (arrow_y) + shaft up, crossbar at top
             if arrow_y < H:
-                bat_cols[1].add(arrow_y)      # Spitze, mittlere Spalte
+                bat_cols[1].add(arrow_y)      # tip, middle column
             for shaft in (arrow_y - 1, arrow_y - 2):
                 if shaft >= 0:
-                    bat_cols[1].add(shaft)    # Schaft mittig
+                    bat_cols[1].add(shaft)    # shaft centered
             top_row = arrow_y - 3
             if top_row >= 0:
                 for c in range(3):
-                    bat_cols[c].add(top_row)  # Querholz (3 Spalten)
+                    bat_cols[c].add(top_row)  # crossbar (3 cols)
         left_desired = [top_fill(cpu_f), top_fill(gpu_f), bottom_fill(cpu_tmp_px),
                         top_fill(ram_f), top_fill(vram_f), bottom_fill(gpu_tmp_px),
                         bat_cols[0], bat_cols[1], bat_cols[2]]
