@@ -276,10 +276,7 @@ def main():
     t_last_slow = 0.0
     t_last_batt = 0.0
     arrow_y = None            # None = animation inactive
-    arrow_dir = 1             # 1 = down (charge), -1 = up (discharge)
-    arrow_speed = 1.0         # movement multiplier (adapted to charge rate)
     one_shot = False          # final pass after charging ends
-    one_shot_count = 0        # countdown for one-shot arrow fade
     one_shot = False          # final pass after charging ends
     charging_prev = False
     snake_phase = 0           # 0 = fill, 1 = fade out
@@ -348,8 +345,7 @@ def main():
             if t0 - t_last_batt >= 5.0:
                 t_last_batt = t0
                 batt = read_battery()
-                bat_cols_cached = battery_col_sets(battery_cells(batt))
-                batt_now = read_charge_now()  # absolute μAh value
+                bat_cols_cached = battery_col_sets(battery_cells(batt))  # absolute μAh value
 
             cpu_f = int(round(cpu_free * H / 100))
             ram_f = int(round(ram_free * H / 100))
@@ -359,54 +355,31 @@ def main():
 
         # --- Charge status, arrow & snake animation ---
         status = read_charge_status()
-        charging = status == 'Charging'
-        # idle_full: at charge limit (not charging) OR 99.5%+ and idle
-        idle_full = (not charging and batt_now >= charge_full * 0.99) or (batt >= 99.5 and status in ('Full', 'Not charging'))
-        discharging = not charging and not idle_full and batt < 99.5
-
-        # --- Adaptive arrow speed based on charge/discharge rate ---
-        charge_rate = read_charge_rate()  # μA: + = charging, - = discharging
-        charge_full = read_charge_full()
-        # speed = base * (1 + |rate| / reference). reference = 500000 μA (0.5A)
-        # Range: 0.3x (slow) to 5x (fast)
-        speed_factor = max(0.3, min(5.0, 1.0 + abs(charge_rate) / 500000.0))
-        # Normalize: if rate is near zero (idle), use min speed
-        if abs(charge_rate) < 50000:  # <50mA = idle
-            speed_factor = 0.3
-        arrow_speed = speed_factor
-
-        # --- Charging: arrow runs top->bottom, loops; one_shot at end ---
-        if charging:
+        # Simple: Charging → arrow, Discharging → arrow, Not charging → snake
+        if status == 'Charging':
             one_shot = True               # after charging ends: one final pass
             if arrow_y is None:
                 arrow_y = 0               # start from top
             else:
-                arrow_y += arrow_speed      # move down, speed-adapted
+                arrow_y += 1              # move down
                 if arrow_y > H + 2:
                     arrow_y = 0           # loops while charging
         elif one_shot and arrow_y is not None:
-            arrow_y += arrow_speed
+            arrow_y += 1
             if arrow_y > H + 2:
                 one_shot = False
                 arrow_y = None            # done, off
-        charging_prev = charging
-
-        # --- Discharge: arrow runs bottom->top (reversed charge arrow) ---
-        if discharging:
+        elif status == 'Discharging':
             if arrow_y is None:
                 arrow_y = H + 2           # start from bottom (above panel)
             else:
-                arrow_y -= arrow_speed      # move up, speed-adapted
+                arrow_y -= 1              # move up
             if arrow_y < -2:
                 arrow_y = H + 2           # loops while discharging
-        elif one_shot and arrow_y is not None:
-            arrow_y += arrow_speed
-            if arrow_y > H + 2:
-                one_shot = False
-                arrow_y = None            # done, off
+        # else: 'Not charging' or 'Full' → snake below
 
         # --- Left module (10 Hz, for animations) ---
-        if idle_full:
+        if status in ('Not charging', 'Full'):
             # Snake-sweep: all 102 cells in fill order
             # (bottom-right -> top-left) first fill, then fade out
             snake_idx += 1
@@ -425,37 +398,32 @@ def main():
                     # Direction alternates per row: even r->l, odd l->r
                     col_idx = (8 - pos) if (row_from_bottom % 2 == 0) else (6 + pos)
                     bat_cols[col_idx - 6].add(H - 1 - row_from_bottom)
-        elif discharging:
-            # Discharge: show battery cells + upward arrow
+        elif status == 'Discharging':
+            # Discharge: show battery cells + downward arrow
             bat_cols = [set(s) for s in bat_cols_cached]
+            # Down arrow: tip at arrow_y (top of shape), shaft below, crossbar at bottom
+            if arrow_y >= 0:
+                bat_cols[1].add(arrow_y)      # tip, top of arrow
+            for shaft in (arrow_y + 1, arrow_y + 2):
+                if shaft < H:
+                    bat_cols[1].add(shaft)    # shaft centered below tip
+            bot_row = arrow_y + 3
+            if bot_row < H:
+                for c in range(3):
+                    bat_cols[c].add(bot_row)  # crossbar at bottom of arrow
         else:
-            snake_phase, snake_idx = 0, -1
+            # Charging: show battery cells + upward arrow
             bat_cols = [set(s) for s in bat_cols_cached]
-        if arrow_y is not None:
-            # Upward arrow (discharge): tip (arrow_y) + shaft down, crossbar below
-            # Downward arrow (charge): tip (arrow_y) + shaft up, crossbar above
-            if arrow_dir == -1:
-                # Up: tip at arrow_y, shaft below, crossbar 3 rows below
-                if arrow_y >= 0:
-                    bat_cols[1].add(arrow_y)      # tip, middle column
-                for shaft in (arrow_y + 1, arrow_y + 2):
-                    if shaft < H:
-                        bat_cols[1].add(shaft)    # shaft centered
-                bot_row = arrow_y + 3
-                if bot_row < H:
-                    for c in range(3):
-                        bat_cols[c].add(bot_row)  # crossbar (3 cols)
-            else:
-                # Up arrow (charge): tip at bottom, shaft up, crossbar at top
-                if arrow_y >= 0:
-                    bat_cols[1].add(arrow_y)      # tip, bottom of arrow
-                for shaft in (arrow_y - 1, arrow_y - 2):
-                    if shaft >= 0:
-                        bat_cols[1].add(shaft)    # shaft centered above tip
-                top_row = arrow_y - 3
-                if top_row >= 0:
-                    for c in range(3):
-                        bat_cols[c].add(top_row)  # crossbar at top of arrow
+            # Up arrow: tip at arrow_y (bottom of shape), shaft above, crossbar at top
+            if arrow_y >= 0:
+                bat_cols[1].add(arrow_y)      # tip, bottom of arrow
+            for shaft in (arrow_y - 1, arrow_y - 2):
+                if shaft >= 0:
+                    bat_cols[1].add(shaft)    # shaft centered above tip
+            top_row = arrow_y - 3
+            if top_row >= 0:
+                for c in range(3):
+                    bat_cols[c].add(top_row)  # crossbar at top of arrow
         left_desired = [top_fill(cpu_f), top_fill(gpu_f), bottom_fill(cpu_tmp_px),
                         top_fill(ram_f), top_fill(vram_f), bottom_fill(gpu_tmp_px),
                         bat_cols[0], bat_cols[1], bat_cols[2]]
