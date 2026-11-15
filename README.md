@@ -32,7 +32,9 @@ This project displays system metrics in real-time on two side-by-side LED panels
 - Linux (tested on Arch Linux)
 - Python 3.10+
 - NVIDIA GPU with `nvidia-smi` (optional, for GPU/VRAM metrics)
-- `inputmodule-control_cli_linux` (for driving LED modules via UART)
+- `inputmodule-control_cli_linux` (for driving LED modules via USB serial)
+  - **Download**: [Framework Computer/inputmodule-rs Releases](https://github.com/FrameworkComputer/inputmodule-rs/releases) (v0.2.0 recommended)
+  - Place in PATH (e.g., `/usr/local/bin/inputmodule-control_cli_linux`)
 
 ### Steps
 
@@ -45,6 +47,7 @@ sudo ./led-system-monitor.py
 ```
 
 > **Note:** The script requires `sudo`/root for access to `/proc` and serial devices (`/dev/ttyACM0`, `/dev/ttyACM1`).
+> **Reference**: The `inputmodule-control_cli_linux` binary is released at [FrameworkComputer/inputmodule-rs](https://github.com/FrameworkComputer/inputmodule-rs/releases). The LED panel hardware (9×34, RP2040 + IS31FL3741A) is documented in the [InputModules](https://github.com/FrameworkComputer/InputModules) repo.
 
 ## Panel Configuration
 
@@ -74,9 +77,18 @@ led-system-monitor.py
 └── main()            → 10 Hz main loop
 ```
 
-## License
+## Related Framework Resources
 
-MIT License – see [LICENSE](LICENSE).
+- [FrameworkComputer/inputmodule-rs](https://github.com/FrameworkComputer/inputmodule-rs) – Official Input Module SW/FW (321 ⭐)
+- [FrameworkComputer/InputModules](https://github.com/FrameworkComputer/InputModules) – Reference designs & docs (246 ⭐)
+- [FrameworkComputer/dotmatrixtool](https://github.com/FrameworkComputer/dotmatrixtool) – Web tool for LED matrix BMP generation (31 ⭐)
+- [FrameworkComputer/qmk_firmware](https://github.com/FrameworkComputer/qmk_firmware) – QMK fork for Framework 16
+
+## Submitting to Framework
+
+If you'd like this to be considered for the official Framework ecosystem, you can:
+- Open a **Discussion** or **Issue** in [FrameworkComputer/InputModules](https://github.com/FrameworkComputer/InputModules) or [inputmodule-rs](https://github.com/FrameworkComputer/inputmodule-rs)
+- Propose it as a community tool alongside the official ones
 
 ---
 
