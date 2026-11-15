@@ -401,16 +401,16 @@ def main():
                     for c in range(3):
                         bat_cols[c].add(bot_row)  # crossbar (3 cols)
             else:
-                # Down: tip at arrow_y, shaft above, crossbar 3 rows above
+                # Down arrow: tip at top, shaft down, crossbar at bottom
                 if arrow_y < H:
-                    bat_cols[1].add(arrow_y)      # tip, middle column
-                for shaft in (arrow_y - 1, arrow_y - 2):
-                    if shaft >= 0:
-                        bat_cols[1].add(shaft)    # shaft centered
-                top_row = arrow_y - 3
-                if top_row >= 0:
+                    bat_cols[1].add(arrow_y)      # tip, top of arrow
+                for shaft in (arrow_y + 1, arrow_y + 2):
+                    if shaft < H:
+                        bat_cols[1].add(shaft)    # shaft centered below tip
+                bot_row = arrow_y + 3
+                if bot_row < H:
                     for c in range(3):
-                        bat_cols[c].add(top_row)  # crossbar (3 cols)
+                        bat_cols[c].add(bot_row)  # crossbar at bottom of arrow
         left_desired = [top_fill(cpu_f), top_fill(gpu_f), bottom_fill(cpu_tmp_px),
                         top_fill(ram_f), top_fill(vram_f), bottom_fill(gpu_tmp_px),
                         bat_cols[0], bat_cols[1], bat_cols[2]]
