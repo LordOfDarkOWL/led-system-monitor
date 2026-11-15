@@ -251,6 +251,8 @@ def main():
     charging_prev = False
     snake_phase = 0           # 0 = fill, 1 = fade out
     snake_idx = -1
+    discharge_phase = 0       # 0 = empty (drain), 1 = refill (reverse snake)
+    discharge_idx = -1        # discharge animation counter (0-101)
 
     while True:
         t0 = time.monotonic()
@@ -325,6 +327,9 @@ def main():
         status = read_charge_status()
         charging = status == 'Charging'
         idle_full = status in ('Full', 'Not charging')
+        discharging = not charging and not idle_full
+
+        # Charging: arrow runs top->bottom, loops; one_shot at end
         if charging:
             one_shot = True               # after charging ends: one final pass
             if arrow_y is None:
@@ -339,6 +344,17 @@ def main():
                 one_shot = False
                 arrow_y = None            # done, off
         charging_prev = charging
+
+        # --- Discharge: arrow runs bottom->top (reversed charge animation) ---
+        if discharging:
+            discharge_phase = 0
+            discharge_idx += 1
+            if discharge_idx > 101:
+                discharge_phase, discharge_idx = 1, -1     # all empty -> reverse
+            # Cells "empty" from bottom-right -> top-left, then refill reverse
+        else:
+            discharge_phase = 0
+            discharge_idx = -1
 
         # --- Left module (10 Hz, for animations) ---
         if idle_full:
@@ -359,6 +375,22 @@ def main():
                     pos = c % 3
                     # Direction alternates per row: even r->l, odd l->r
                     col_idx = (8 - pos) if (row_from_bottom % 2 == 0) else (6 + pos)
+                    bat_cols[col_idx - 6].add(H - 1 - row_from_bottom)
+        elif discharging:
+            # Discharge: reverse snake-sweep (cells "drain" bottom->top)
+            # Phase 0: empty cells from full (like reverse of charge snake)
+            # Phase 1: refill in reverse order (bottom-left -> top-right)
+            bat_cols = [set(), set(), set()]
+            for c in range(102):
+                if discharge_phase == 0:
+                    lit = (c <= discharge_idx)   # empty from 0 up
+                else:
+                    lit = (c > discharge_idx)    # refill from discharge_idx
+                if lit:
+                    row_from_bottom = c // 3
+                    pos = c % 3
+                    # Reverse direction: even rows l->r, odd rows r->l (opposite of charge)
+                    col_idx = (6 + pos) if (row_from_bottom % 2 == 0) else (8 - pos)
                     bat_cols[col_idx - 6].add(H - 1 - row_from_bottom)
         else:
             snake_phase, snake_idx = 0, -1
