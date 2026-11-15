@@ -247,6 +247,7 @@ def main():
     t_last_slow = 0.0
     t_last_batt = 0.0
     arrow_y = None            # None = animation inactive
+    arrow_dir = 1             # 1 = down (charge), -1 = up (discharge)
     one_shot = False          # final pass after charging ends
     charging_prev = False
     snake_phase = 0           # 0 = fill, 1 = fade out
@@ -345,15 +346,19 @@ def main():
                 arrow_y = None            # done, off
         charging_prev = charging
 
-        # --- Discharge: arrow runs bottom->top (reversed charge animation) ---
+        # --- Discharge: arrow runs bottom->top (reversed charge arrow) ---
         if discharging:
-            discharge_phase = 0
-            discharge_idx += 1
-            if discharge_idx > 101:
-                discharge_phase, discharge_idx = 1, -1     # all empty -> reverse
-        else:
-            discharge_phase = 0
-            discharge_idx = -1
+            if arrow_y is None:
+                arrow_y = H + 2           # start from bottom (above panel)
+            else:
+                arrow_y -= 1              # move up
+            if arrow_y < -2:
+                arrow_y = H + 2           # loops while discharging
+        elif one_shot and arrow_y is not None:
+            arrow_y += 1
+            if arrow_y > H + 2:
+                one_shot = False
+                arrow_y = None            # done, off
 
         # --- Left module (10 Hz, for animations) ---
         if idle_full:
@@ -376,34 +381,36 @@ def main():
                     col_idx = (8 - pos) if (row_from_bottom % 2 == 0) else (6 + pos)
                     bat_cols[col_idx - 6].add(H - 1 - row_from_bottom)
         elif discharging:
-            # Discharge: reverse snake-sweep (cells "drain" bottom->top)
-            # Start with battery cells (up to current pct), then drain on top
+            # Discharge: show battery cells + upward arrow
             bat_cols = [set(s) for s in bat_cols_cached]
-            for c in range(102):
-                if discharge_phase == 0:
-                    lit = (c <= discharge_idx)   # drain from 0 up
-                else:
-                    lit = (c > discharge_idx)    # refill from discharge_idx
-                if lit:
-                    row_from_bottom = c // 3
-                    pos = c % 3
-                    # Reverse direction: even rows l->r, odd rows r->l (opposite of charge)
-                    col_idx = (6 + pos) if (row_from_bottom % 2 == 0) else (8 - pos)
-                    bat_cols[col_idx - 6].add(H - 1 - row_from_bottom)
         else:
             snake_phase, snake_idx = 0, -1
             bat_cols = [set(s) for s in bat_cols_cached]
         if arrow_y is not None:
-            # Downward arrow: tip (arrow_y) + shaft up, crossbar at top
-            if arrow_y < H:
-                bat_cols[1].add(arrow_y)      # tip, middle column
-            for shaft in (arrow_y - 1, arrow_y - 2):
-                if shaft >= 0:
-                    bat_cols[1].add(shaft)    # shaft centered
-            top_row = arrow_y - 3
-            if top_row >= 0:
-                for c in range(3):
-                    bat_cols[c].add(top_row)  # crossbar (3 cols)
+            # Upward arrow (discharge): tip (arrow_y) + shaft down, crossbar below
+            # Downward arrow (charge): tip (arrow_y) + shaft up, crossbar above
+            if arrow_dir == -1:
+                # Up: tip at arrow_y, shaft below, crossbar 3 rows below
+                if arrow_y >= 0:
+                    bat_cols[1].add(arrow_y)      # tip, middle column
+                for shaft in (arrow_y + 1, arrow_y + 2):
+                    if shaft < H:
+                        bat_cols[1].add(shaft)    # shaft centered
+                bot_row = arrow_y + 3
+                if bot_row < H:
+                    for c in range(3):
+                        bat_cols[c].add(bot_row)  # crossbar (3 cols)
+            else:
+                # Down: tip at arrow_y, shaft above, crossbar 3 rows above
+                if arrow_y < H:
+                    bat_cols[1].add(arrow_y)      # tip, middle column
+                for shaft in (arrow_y - 1, arrow_y - 2):
+                    if shaft >= 0:
+                        bat_cols[1].add(shaft)    # shaft centered
+                top_row = arrow_y - 3
+                if top_row >= 0:
+                    for c in range(3):
+                        bat_cols[c].add(top_row)  # crossbar (3 cols)
         left_desired = [top_fill(cpu_f), top_fill(gpu_f), bottom_fill(cpu_tmp_px),
                         top_fill(ram_f), top_fill(vram_f), bottom_fill(gpu_tmp_px),
                         bat_cols[0], bat_cols[1], bat_cols[2]]
