@@ -1,64 +1,64 @@
 # LED Matrix System Monitor
 
-**Echtzeit-System-Monitoring auf zwei LED-Matrix-Panelen für den [Framework Laptop 16](https://frame.work/laptops/laptop-16).**
+**Real-time system monitoring on two LED-matrix panels for the [Framework Laptop 16](https://frame.work/laptops/laptop-16).**
 
-## Über dieses Projekt
+## About
 
-Dieses Projekt visualisiert Systemmetriken in Echtzeit auf zwei nebeneinander montierten LED-Panelen (je 9×34 LEDs). Der Monitor zeigt:
+This project displays system metrics in real-time on two side-by-side LED panels (each 9×34 LEDs). The monitor shows:
 
-**Linkes Panel (System):**
-- CPU-Auslastung (Balk)
-- GPU-Auslastung (NVIDIA)
-- CPU-Temperatur (Zeiger, 30–100 °C)
-- RAM-Freier Speicher (Balk)
-- VRAM-Freier Speicher (NVIDIA)
-- Akku-Zellen (3×34=102 LEDs, Snake-Sweep-Animation beim Ladezustand)
+**Left Panel (System):**
+- CPU usage (bar)
+- GPU usage (NVIDIA)
+- CPU temperature (indicator, 30–100 °C)
+- Free RAM (bar)
+- Free VRAM (NVIDIA)
+- Battery cells (3×34=102 LEDs, snake-sweep animation on charge state)
 
-**Rechtes Panel (Netzwerk):**
-- Download-Rate (spaltenbasiert: %, 1000er, 100er, 10er, 1er, kbit)
-- Upload-Rate (spaltenbasiert: %, 1000er, kbit)
+**Right Panel (Network):**
+- Download rate (column-based: %, 1000s, 100s, 10s, 1s, kbit)
+- Upload rate (column-based: %, 1000s, kbit)
 
-### Besonderheiten
+### Features
 
-- **Auto-Helligkeit**: IIO-Umgebungslichtsensor (EMA geglättet, 8–255)
-- **Lade-Animation**: Pfeil läuft durch Akku-Zellen, Snake-Sweep bei voller Ladung
-- **Fade-Effekte**: Balken faden mit 10 Hz sanft ein/aus (~2 s)
-- **Panel-Kalibrierung**: Kommt mit Shift-Matrix für korrekte physische Zuordnung
+- **Auto-brightness**: IIO ambient light sensor (EMA smoothed, 8–255)
+- **Charge animation**: Arrow runs through battery cells, snake-sweep on full charge
+- **Fade effects**: Bars fade in/out at 10 Hz (~2 s)
+- **Panel calibration**: Includes shift matrix for correct physical addressing
 
 ## Installation
 
-### Voraussetzungen
+### Prerequisites
 
-- Linux (getestet auf Arch Linux)
+- Linux (tested on Arch Linux)
 - Python 3.10+
-- NVIDIA GPU mit `nvidia-smi` (optional, für GPU/VRAM-Metriken)
-- `inputmodule-control_cli_linux` (für das Ansteuern der LED-Module via UART)
+- NVIDIA GPU with `nvidia-smi` (optional, for GPU/VRAM metrics)
+- `inputmodule-control_cli_linux` (for driving LED modules via UART)
 
-### Schritte
+### Steps
 
 ```bash
 git clone https://github.com/LordOfDarkOWL/led-system-monitor.git
 cd led-system-monitor
-pip install -r requirements.txt  # ggf. nur stdlib
+pip install -r requirements.txt  # stdlib only, no extra deps needed
 chmod +x led-system-monitor.py
 sudo ./led-system-monitor.py
 ```
 
-> **Hinweis:** Das Skript benötigt `sudo`/Root für den Zugriff auf `/proc` und die seriellen Geräte (`/dev/ttyACM0`, `/dev/ttyACM1`).
+> **Note:** The script requires `sudo`/root for access to `/proc` and serial devices (`/dev/ttyACM0`, `/dev/ttyACM1`).
 
-## Panel-Konfiguration
+## Panel Configuration
 
-Die Panels müssen physisch nebeneinander montiert werden (links = System, rechts = Netzwerk). Die `shift()`-Funktion in `led-system-monitor.py` berücksichtigt die physische LED-Adressierung.
+The panels must be mounted physically side-by-side (left = System, right = Network). The `shift()` function in `led-system-monitor.py` accounts for the physical LED addressing.
 
-### Helligkeit kalibrieren
+### Calibrate brightness
 
-Editiere in `led-system-monitor.py`:
+Edit in `led-system-monitor.py`:
 
 ```python
-MIN_BRIGHT = 8  # Minimum-Helligkeit bei Dunkelheit (0–255)
+MIN_BRIGHT = 8  # Minimum brightness in darkness (0–255)
 ```
 
-## Architektur
+## Architecture
 
 ```
 led-system-monitor.py
@@ -69,15 +69,15 @@ led-system-monitor.py
 ├── read_battery()    → /sys/class/power_supply/BAT1
 ├── read_als()        → /sys/bus/iio/devices/iio:device0
 ├── read_net()        → /sys/class/net/*/statistics
-├── build_bmp()       → 24-Bit BMP-Generator
+├── build_bmp()       → 24-bit BMP generator
 ├── send()            → inputmodule-control_cli_linux
-└── main()            → 10 Hz Hauptloop
+└── main()            → 10 Hz main loop
 ```
 
-## Lizenz
+## License
 
-MIT License – siehe [LICENSE](LICENSE).
+MIT License – see [LICENSE](LICENSE).
 
 ---
 
-> **Hintergrund:** Der Beispielcode stammt aus der Framework Laptop 16-Community. Dieses Projekt erweitert ihn um ein vollständiges System-Monitoring.
+> **Background:** The example code originated from the Framework Laptop 16 community. This project extends it into a complete system monitoring solution.
