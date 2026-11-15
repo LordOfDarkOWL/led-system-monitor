@@ -89,6 +89,35 @@ def read_charge_status():
         return 'Unknown'
 
 
+def read_charge_rate():
+    # Returns signed current (μA): positive = charging, negative = discharging
+    # Falls current_now nicht verfügbar, versuche power/voltage
+    try:
+        return int(open('/sys/class/power_supply/BAT1/current_now').read().strip())
+    except Exception:
+        pass
+    try:
+        power = int(open('/sys/class/power_supply/BAT1/power').read().strip())
+        voltage = int(open('/sys/class/power_supply/BAT1/voltage_now').read().strip())
+        return power * 1000000 // voltage  # μA
+    except Exception:
+        return 0
+
+
+def read_charge_full():
+    try:
+        return int(open('/sys/class/power_supply/BAT1/charge_full').read().strip())
+    except Exception:
+        return 8000000  # 8 Ah default
+
+
+def read_charge_now():
+    try:
+        return int(open('/sys/class/power_supply/BAT1/charge_now').read().strip())
+    except Exception:
+        return 0
+
+
 def battery_col_sets(cells):
     # returns 3 sets of physical rows (col indices 6,7,8)
     # Fill: bottom-right first, per row right->left, rows ascending
@@ -248,6 +277,9 @@ def main():
     t_last_batt = 0.0
     arrow_y = None            # None = animation inactive
     arrow_dir = 1             # 1 = down (charge), -1 = up (discharge)
+    arrow_speed = 1.0         # movement multiplier (adapted to charge rate)
+    one_shot = False          # final pass after charging ends
+    one_shot_count = 0        # countdown for one-shot arrow fade
     one_shot = False          # final pass after charging ends
     charging_prev = False
     snake_phase = 0           # 0 = fill, 1 = fade out
@@ -317,6 +349,7 @@ def main():
                 t_last_batt = t0
                 batt = read_battery()
                 bat_cols_cached = battery_col_sets(battery_cells(batt))
+                batt_now = read_charge_now()  # absolute μAh value
 
             cpu_f = int(round(cpu_free * H / 100))
             ram_f = int(round(ram_free * H / 100))
@@ -327,20 +360,32 @@ def main():
         # --- Charge status, arrow & snake animation ---
         status = read_charge_status()
         charging = status == 'Charging'
-        idle_full = batt >= 99.5 and status in ('Full', 'Not charging')  # actual 100% + idle
+        # idle_full: at charge limit (not charging) OR 99.5%+ and idle
+        idle_full = (not charging and batt_now >= charge_full * 0.99) or (batt >= 99.5 and status in ('Full', 'Not charging'))
         discharging = not charging and not idle_full and batt < 99.5
 
-        # Charging: arrow runs top->bottom, loops; one_shot at end
+        # --- Adaptive arrow speed based on charge/discharge rate ---
+        charge_rate = read_charge_rate()  # μA: + = charging, - = discharging
+        charge_full = read_charge_full()
+        # speed = base * (1 + |rate| / reference). reference = 500000 μA (0.5A)
+        # Range: 0.3x (slow) to 5x (fast)
+        speed_factor = max(0.3, min(5.0, 1.0 + abs(charge_rate) / 500000.0))
+        # Normalize: if rate is near zero (idle), use min speed
+        if abs(charge_rate) < 50000:  # <50mA = idle
+            speed_factor = 0.3
+        arrow_speed = speed_factor
+
+        # --- Charging: arrow runs top->bottom, loops; one_shot at end ---
         if charging:
             one_shot = True               # after charging ends: one final pass
             if arrow_y is None:
                 arrow_y = 0               # start from top
             else:
-                arrow_y += 1
+                arrow_y += arrow_speed      # move down, speed-adapted
                 if arrow_y > H + 2:
                     arrow_y = 0           # loops while charging
         elif one_shot and arrow_y is not None:
-            arrow_y += 1
+            arrow_y += arrow_speed
             if arrow_y > H + 2:
                 one_shot = False
                 arrow_y = None            # done, off
@@ -351,11 +396,11 @@ def main():
             if arrow_y is None:
                 arrow_y = H + 2           # start from bottom (above panel)
             else:
-                arrow_y -= 1              # move up
+                arrow_y -= arrow_speed      # move up, speed-adapted
             if arrow_y < -2:
                 arrow_y = H + 2           # loops while discharging
         elif one_shot and arrow_y is not None:
-            arrow_y += 1
+            arrow_y += arrow_speed
             if arrow_y > H + 2:
                 one_shot = False
                 arrow_y = None            # done, off
