@@ -326,8 +326,8 @@ def main():
         # --- Charge status, arrow & snake animation ---
         status = read_charge_status()
         charging = status == 'Charging'
-        idle_full = status in ('Full', 'Not charging')
-        discharging = not charging and not idle_full
+        idle_full = batt >= 99.5 and status in ('Full', 'Not charging')  # actual 100% + idle
+        discharging = not charging and not idle_full and batt < 99.5
 
         # Charging: arrow runs top->bottom, loops; one_shot at end
         if charging:
@@ -351,7 +351,6 @@ def main():
             discharge_idx += 1
             if discharge_idx > 101:
                 discharge_phase, discharge_idx = 1, -1     # all empty -> reverse
-            # Cells "empty" from bottom-right -> top-left, then refill reverse
         else:
             discharge_phase = 0
             discharge_idx = -1
@@ -378,12 +377,11 @@ def main():
                     bat_cols[col_idx - 6].add(H - 1 - row_from_bottom)
         elif discharging:
             # Discharge: reverse snake-sweep (cells "drain" bottom->top)
-            # Phase 0: empty cells from full (like reverse of charge snake)
-            # Phase 1: refill in reverse order (bottom-left -> top-right)
-            bat_cols = [set(), set(), set()]
+            # Start with battery cells (up to current pct), then drain on top
+            bat_cols = [set(s) for s in bat_cols_cached]
             for c in range(102):
                 if discharge_phase == 0:
-                    lit = (c <= discharge_idx)   # empty from 0 up
+                    lit = (c <= discharge_idx)   # drain from 0 up
                 else:
                     lit = (c > discharge_idx)    # refill from discharge_idx
                 if lit:
